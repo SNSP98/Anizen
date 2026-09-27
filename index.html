@@ -1,1 +1,577 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AniZen</title>
 
+<style>
+*{box-sizing:border-box}
+
+body{
+    margin:0;
+    background:#080a0f;
+    color:white;
+    font-family:Arial,sans-serif;
+}
+
+header{
+    position:sticky;
+    top:0;
+    z-index:10;
+    background:#0b0e15ee;
+    backdrop-filter:blur(15px);
+    padding:15px 5%;
+    display:flex;
+    align-items:center;
+    gap:15px;
+    border-bottom:1px solid #222735;
+}
+
+.logo{
+    font-size:26px;
+    font-weight:900;
+}
+
+.logo span{
+    color:#8b5cf6;
+}
+
+#search{
+    margin-left:auto;
+    width:min(430px,60vw);
+    padding:12px 16px;
+    border-radius:30px;
+    border:1px solid #303647;
+    background:#171b25;
+    color:white;
+    outline:none;
+}
+
+main{
+    width:min(1200px,92%);
+    margin:auto;
+}
+
+.hero{
+    margin:25px 0;
+    min-height:220px;
+    padding:32px;
+    border-radius:24px;
+    background:
+    radial-gradient(circle at 80% 20%,#673ab755,transparent 40%),
+    linear-gradient(120deg,#24153f,#111827);
+    display:flex;
+    flex-direction:column;
+    justify-content:flex-end;
+}
+
+.hero h1{
+    margin:0;
+    font-size:clamp(35px,7vw,65px);
+}
+
+.hero p{
+    max-width:650px;
+    color:#c6cad3;
+}
+
+.sectionTitle{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    margin-top:30px;
+}
+
+.sectionTitle h2{
+    margin:0;
+}
+
+.muted{
+    color:#9ca3af;
+    font-size:13px;
+}
+
+.grid{
+    display:grid;
+    grid-template-columns:repeat(auto-fill,minmax(145px,1fr));
+    gap:18px;
+    margin:16px 0 40px;
+}
+
+.card{
+    cursor:pointer;
+    transition:.2s;
+}
+
+.card:hover{
+    transform:translateY(-4px);
+}
+
+.poster{
+    width:100%;
+    aspect-ratio:2/3;
+    object-fit:cover;
+    border-radius:14px;
+    background:#151923;
+}
+
+.title{
+    margin-top:8px;
+    font-weight:bold;
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+}
+
+.info{
+    color:#9ca3af;
+    font-size:12px;
+    margin-top:4px;
+}
+
+#message{
+    text-align:center;
+    padding:25px;
+    color:#9ca3af;
+}
+
+dialog{
+    width:min(720px,92vw);
+    background:#10141d;
+    color:white;
+    border:1px solid #343a4b;
+    border-radius:20px;
+    padding:22px;
+}
+
+dialog::backdrop{
+    background:#000b;
+}
+
+.modalPoster{
+    width:130px;
+    border-radius:13px;
+    float:left;
+    margin:0 18px 12px 0;
+}
+
+.close{
+    float:right;
+    background:#292e3c;
+    color:white;
+    border:0;
+    border-radius:10px;
+    padding:9px 12px;
+}
+
+.description{
+    color:#c5cad4;
+    line-height:1.5;
+}
+
+.badge{
+    display:inline-block;
+    background:#282d3b;
+    padding:6px 9px;
+    border-radius:20px;
+    margin:3px;
+    font-size:12px;
+}
+
+.anilist{
+    color:#a78bfa;
+}
+
+@media(max-width:500px){
+    header{
+        padding:13px 4%;
+    }
+
+    .logo{
+        font-size:22px;
+    }
+
+    .grid{
+        grid-template-columns:repeat(2,1fr);
+        gap:13px;
+    }
+
+    .hero{
+        min-height:190px;
+        padding:24px;
+    }
+}
+</style>
+</head>
+
+<body>
+
+<header>
+    <div class="logo">Ani<span>Zen</span></div>
+    <input id="search" placeholder="Search anime...">
+</header>
+
+<main>
+
+<section class="hero">
+    <h1>Find your next anime.</h1>
+    <p>
+        Discover recently aired anime, trending series
+        and search the anime catalogue.
+    </p>
+</section>
+
+<div class="sectionTitle">
+    <h2 id="recentTitle">Recently Aired</h2>
+    <span class="muted">Live schedule</span>
+</div>
+
+<div id="recent" class="grid"></div>
+
+<div id="trendingSection">
+    <div class="sectionTitle">
+        <h2>Trending Now</h2>
+    </div>
+
+    <div id="trending" class="grid"></div>
+</div>
+
+<div id="message">Loading anime...</div>
+
+</main>
+
+<dialog id="animeDialog">
+    <button class="close" onclick="animeDialog.close()">Close</button>
+    <div id="animeDetails"></div>
+</dialog>
+
+<script>
+
+const API = "https://graphql.anilist.co";
+
+const fields = `
+id
+title {
+    romaji
+    english
+}
+coverImage {
+    large
+}
+genres
+averageScore
+episodes
+status
+description(asHtml:false)
+siteUrl
+`;
+
+async function queryAniList(query, variables = {}) {
+
+    const response = await fetch(API,{
+        method:"POST",
+        headers:{
+            "Content-Type":"application/json",
+            "Accept":"application/json"
+        },
+        body:JSON.stringify({
+            query,
+            variables
+        })
+    });
+
+    if(!response.ok){
+        throw new Error("AniList request failed");
+    }
+
+    const json = await response.json();
+
+    return json.data;
+}
+
+function animeName(anime){
+
+    return anime.title.english ||
+           anime.title.romaji ||
+           "Unknown Anime";
+}
+
+function createCard(anime, extra = ""){
+
+    return `
+    <article class="card" onclick="showAnime(${anime.id})">
+
+        <img
+        class="poster"
+        loading="lazy"
+        src="${anime.coverImage?.large || ""}"
+        alt="${animeName(anime)}">
+
+        <div class="title">
+            ${animeName(anime)}
+        </div>
+
+        <div class="info">
+            ${extra ||
+            `${anime.averageScore || "—"}% •
+            ${(anime.status || "").replaceAll("_"," ")}`
+            }
+        </div>
+
+    </article>
+    `;
+}
+
+async function loadHome(){
+
+    try{
+
+        message.textContent = "Loading anime...";
+
+        const recentData = await queryAniList(`
+        query {
+
+            Page(page:1, perPage:20){
+
+                airingSchedules(
+                    sort:TIME_DESC
+                    notYetAired:false
+                ){
+
+                    episode
+
+                    media {
+
+                        ${fields}
+
+                        isAdult
+                    }
+                }
+            }
+        }
+        `);
+
+        const trendingData = await queryAniList(`
+        query {
+
+            Page(page:1, perPage:20){
+
+                media(
+                    type:ANIME
+                    sort:TRENDING_DESC
+                    isAdult:false
+                ){
+
+                    ${fields}
+                }
+            }
+        }
+        `);
+
+        recent.innerHTML =
+        recentData.Page.airingSchedules
+
+        .filter(item => !item.media.isAdult)
+
+        .map(item =>
+            createCard(
+                item.media,
+                "Episode " + item.episode
+            )
+        )
+
+        .join("");
+
+        trending.innerHTML =
+        trendingData.Page.media
+
+        .map(anime =>
+            createCard(anime)
+        )
+
+        .join("");
+
+        message.textContent = "";
+
+    }
+
+    catch(error){
+
+        console.error(error);
+
+        message.textContent =
+        "Couldn't load anime data. Refresh the page to try again.";
+    }
+}
+
+let searchTimer;
+
+search.addEventListener("input",()=>{
+
+    clearTimeout(searchTimer);
+
+    searchTimer =
+    setTimeout(runSearch,400);
+});
+
+async function runSearch(){
+
+    const term =
+    search.value.trim();
+
+    if(!term){
+
+        recentTitle.textContent =
+        "Recently Aired";
+
+        trendingSection.style.display =
+        "block";
+
+        loadHome();
+
+        return;
+    }
+
+    try{
+
+        message.textContent =
+        "Searching...";
+
+        const data =
+        await queryAniList(`
+        query($search:String){
+
+            Page(page:1,perPage:30){
+
+                media(
+                    type:ANIME
+                    search:$search
+                    isAdult:false
+                ){
+
+                    ${fields}
+                }
+            }
+        }
+        `,
+        {
+            search:term
+        });
+
+        recentTitle.textContent =
+        "Search Results";
+
+        trendingSection.style.display =
+        "none";
+
+        recent.innerHTML =
+        data.Page.media
+
+        .map(anime =>
+            createCard(anime)
+        )
+
+        .join("");
+
+        message.textContent = "";
+
+    }
+
+    catch(error){
+
+        message.textContent =
+        "Search failed. Try again.";
+    }
+}
+
+async function showAnime(id){
+
+    try{
+
+        const data =
+        await queryAniList(`
+        query($id:Int){
+
+            Media(
+                id:$id
+                type:ANIME
+            ){
+
+                ${fields}
+            }
+        }
+        `,
+        {
+            id:id
+        });
+
+        const anime =
+        data.Media;
+
+        animeDetails.innerHTML = `
+
+        <img
+        class="modalPoster"
+        src="${anime.coverImage.large}">
+
+        <h2>
+            ${animeName(anime)}
+        </h2>
+
+        <div>
+
+            <span class="badge">
+                ⭐ ${anime.averageScore || "—"}%
+            </span>
+
+            <span class="badge">
+                ${anime.episodes || "?"} episodes
+            </span>
+
+        </div>
+
+        <p class="description">
+            ${anime.description ||
+            "No description available."}
+        </p>
+
+        <p>
+            ${anime.genres
+
+            .map(genre =>
+            `<span class="badge">${genre}</span>`)
+
+            .join("")}
+        </p>
+
+        <p>
+            <a
+            class="anilist"
+            href="${anime.siteUrl}"
+            target="_blank"
+            rel="noopener">
+
+            More information on AniList
+
+            </a>
+        </p>
+
+        `;
+
+        animeDialog.showModal();
+
+    }
+
+    catch(error){
+
+        console.error(error);
+    }
+}
+
+loadHome();
+
+</script>
+
+</body>
+</html>
